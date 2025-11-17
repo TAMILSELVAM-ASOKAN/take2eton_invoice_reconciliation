@@ -1,0 +1,41 @@
+{
+  "name": "Invoice-Reconcilation",
+  "version": "1.0.0",
+  "size": {
+    "width": 3,
+    "height": 3
+  },
+  "mapping": [
+    {
+      "dataSetId": "c84086b1-0621-49e9-9f77-f05435b7042c",
+      "alias": "Invoice_Reconcilation",
+      "fields": []
+    }
+  ],
+  "workflowsMapping": [
+    {
+      "startName": "Invoice Reconciliation",
+      "alias": "Invoice Reconciliation",
+      "modelId": "60461b0e-57d8-4c6a-b34f-e22f42c26027",
+      "parameters": [
+        {
+          "name": "Invoice_Path",
+          "displayName": "Invoice_Path",
+          "subString": null,
+          "type": "text",
+          "visible": true,
+          "value": null,
+          "required": true,
+          "isList": false,
+          "children": [],
+          "nullable": false,
+          "entitySubType": null,
+          "aliasedName": "Invoice_Path"
+        }
+      ],
+      "version": "1.0.2"
+    }
+  ],
+  "id": "7366227e-6cde-4da6-a558-e96f522b02e6",
+  "proxyId":"3cac8a0f-25f0-422b-8437-49099075c89c"
+}
