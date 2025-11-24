@@ -437,14 +437,14 @@ const InvoiceReconciliation = () => {
 
       // Add file_name filter
       if (filterFileName !== 'all') {
-        filterQuery += filterQuery ? " , " : "";
-        filterQuery += `file_name == '${filterFileName}'`;
+        filterQuery += filterQuery ? "," : "";
+        filterQuery += `file_name=${filterFileName}`;
       }
 
       // Add search filter
       if (searchTerm) {
         const searchFilter = `hotel_name contains '${searchTerm}'`;
-        filterQuery += filterQuery ? " , " : "";
+        filterQuery += filterQuery ? "," : "";
         filterQuery += searchFilter;
       }
 
@@ -872,7 +872,7 @@ const InvoiceReconciliation = () => {
                 {allColumns.map((col) => (
                   <Grid item size={{ xs: 12, sm: 6 }} key={col.id}>
                     <Box className="detail-item">
-                      <Typography className="detail-label">{col.label}</Typography>
+                      <Typography className="detail-label" sx={{fontWeight:700}}>{col.label}</Typography>
                       <Typography className="detail-value">
                         {col.id === 'fare' ? (
                           `${selectedRow.currency_code} ${Number(selectedRow[col.id]).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
@@ -888,7 +888,7 @@ const InvoiceReconciliation = () => {
                 {selectedRow.reason && (
                   <Grid item size={{ xs: 12 }}>
                     <Box className="detail-item">
-                      <Typography className="detail-label">Reason</Typography>
+                      <Typography className="detail-label" sx={{fontWeight:700}}>Reason</Typography>
                       <Typography className="detail-value" sx={{ color: selectedRow.flag === "True" || selectedRow.flag === true ? '#10b981' : '#ef4444' }}>
                         {selectedRow.reason}
                       </Typography>
