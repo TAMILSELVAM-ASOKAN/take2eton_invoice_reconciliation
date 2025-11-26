@@ -35,7 +35,11 @@ import {
   Pagination,
   Skeleton,
   Snackbar,
-  CircularProgress
+  CircularProgress,
+  Menu,
+  ListItemIcon,
+  ListItemText,
+  MenuItem as MenuItemComponent
 } from '@mui/material';
 import {
   CloudUpload,
@@ -48,7 +52,10 @@ import {
   MoreHoriz,
   Close,
   Error as ErrorIcon,
-  CheckCircleOutline
+  CheckCircleOutline,
+  Visibility,
+  Edit,
+  Link as LinkIcon
 } from '@mui/icons-material';
 import domo from "ryuu.js";
 import logo from './assets/logo/Take2Eton_Group_with_strapline.png'
@@ -172,6 +179,7 @@ const DetailGrid = styled(Grid)(({ theme }) => ({
   '& .detail-item': {
     display: 'flex',
     flexDirection: 'column',
+    width: "100%",
     gap: theme.spacing(0.5),
     '& .detail-label': {
       fontSize: '0.75rem',
@@ -183,7 +191,8 @@ const DetailGrid = styled(Grid)(({ theme }) => ({
     '& .detail-value': {
       fontSize: '0.95rem',
       color: '#2c2c2c',
-      fontWeight: 500
+      fontWeight: 500,
+      overflowWrap: 'break-word',
     }
   }
 }));
@@ -204,11 +213,19 @@ const InvoiceReconciliation = () => {
   const [notification, setNotification] = useState({
     open: false,
     message: '',
-    severity: 'success', // 'success', 'error', 'warning', 'info'
+    severity: 'success',
     duration: 4000
   });
-  const filesetId = "a5b14408-60a2-426c-97f2-fd9e2d305976";
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [menuRow, setMenuRow] = useState(null);
+  const [potentialMatches, setPotentialMatches] = useState([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [showMatchesDialog, setShowMatchesDialog] = useState(false);
+  const [editingMatch, setEditingMatch] = useState(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedMenuRowId, setSelectedMenuRowId] = useState(null);
 
+  const filesetId = "a5b14408-60a2-426c-97f2-fd9e2d305976";
   const [dataset, setDataset] = useState([]);
 
   const essentialColumns = [
@@ -225,6 +242,7 @@ const InvoiceReconciliation = () => {
     { id: 'invoice_number', label: 'Invoice ID' },
     { id: 'passenger_name', label: 'Passenger Name' },
     { id: 'hotel_name', label: 'Hotel Name' },
+    { id: 'hotel_address', label: 'Hotel Address' },
     { id: 'chain_name', label: 'Hotel Chain' },
     { id: 'invoice_date', label: 'Invoice Date' },
     { id: 'departure_or_checkin_date', label: 'Check-in Date' },
@@ -309,18 +327,15 @@ const InvoiceReconciliation = () => {
   const uniqueFileNames = ['all', ...new Set(dataset.map(item => item.file_name).filter(Boolean))];
 
   const filteredData = dataset.filter(item => {
-    // File name filter
     if (filterFileName !== 'all' && item.file_name !== filterFileName) {
       return false;
     }
-    // Flag filter
     if (filterFlag === 'matched' && item.flag !== "True" && item.flag !== true) {
       return false;
     }
     if (filterFlag === 'unmatched' && (item.flag === "True" || item.flag === true)) {
       return false;
     }
-    // Search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       return (
@@ -399,14 +414,12 @@ const InvoiceReconciliation = () => {
         return;
       }
 
-      // Trigger workflow
       const workflowData = { "Invoice_Path": uploadedFileDetails.path };
       const workflowResponse = await domo.post(
         `/domo/workflow/v1/models/Invoice Reconciliation/start`,
         workflowData
       );
 
-      // Show processing message with loader
       showNotification('Invoice uploaded successfully!', 'success');
       setGlobalLoading(true);
       setUploading(false);
@@ -428,13 +441,12 @@ const InvoiceReconciliation = () => {
       setLoadingData(true);
 
       let query = {};
-
       const conditions = [];
 
       if (filterFlag === 'matched') {
-        conditions.push({ 'content.flag': { $eq: "True" } });
+        conditions.push({ 'content.flag': { $eq: true } });
       } else if (filterFlag === 'unmatched') {
-        conditions.push({ 'content.flag': { $eq: "False" } });
+        conditions.push({ 'content.flag': { $eq: false } });
       }
 
       if (filterFileName !== 'all') {
@@ -468,8 +480,12 @@ const InvoiceReconciliation = () => {
       );
 
       const contentValues = Array.isArray(response)
-        ? response.map(item => item.content)
+        ? response.map(item => ({
+          ...item.content,
+          id: item.id
+        }))
         : [];
+
 
       if (Array.isArray(contentValues) && contentValues.length > 0) {
         setDataset(contentValues);
@@ -493,6 +509,128 @@ const InvoiceReconciliation = () => {
     }
   };
 
+  const fetchPotentialMatches = async (potentialIds) => {
+    try {
+      setLoadingMatches(true);
+
+      const response = await domo.post('/sql/v1/Customer_Data',
+        `SELECT "Invoice Number", "Passenger Name", "Hotel Name", "Hotel Address", "Chain Name", "Invoice Date", "Departure/ Checkin Date", "Booking Date", "Arrival City Name", "Arrival Country", "Fare", "Currency Code" FROM Customer_Data WHERE "Invoice Number" IN (${potentialIds.map(id => `'${id}'`).join(',')})`,
+        { contentType: 'text/plain' }
+      );
+
+      console.log('Potential matches response:', response);
+
+      // Transform rows array into objects using columns as keys
+      const formattedMatches = response.rows.map(row => {
+        const matchObject = {};
+        response.columns.forEach((column, index) => {
+          matchObject[column] = row[index];
+        });
+        return matchObject;
+      });
+
+      console.log('Formatted matches:', formattedMatches);
+      return formattedMatches || [];
+    } catch (error) {
+      console.error('Error fetching potential matches:', error);
+      showNotification('Failed to fetch potential matches', 'error');
+      return [];
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
+  const handleMenuOpen = (event, row) => {
+    setAnchorEl(event.currentTarget);
+    setMenuRow(row);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setMenuRow(null);
+  };
+
+  const handleViewDetails = () => {
+    setSelectedRow(menuRow);
+    setOpenDialog(true);
+    handleMenuClose();
+  };
+
+  const handleFindMatches = async () => {
+    if (!menuRow || !menuRow.potential_invoice_ids) {
+      showNotification('No potential matches available for this record', 'warning');
+      handleMenuClose();
+      return;
+    }
+
+    setSelectedMenuRowId(menuRow.id);
+    // Parse potential_invoice_ids if it's a string
+    let potentialIds = menuRow.potential_invoice_ids;
+    if (typeof potentialIds === 'string') {
+      potentialIds = potentialIds.split(',').map(id => id.trim());
+    }
+
+    const matches = await fetchPotentialMatches(potentialIds);
+    setPotentialMatches(matches);
+    setShowMatchesDialog(true);
+    handleMenuClose();
+  };
+
+  const handleSelectMatch = (match) => {
+    setEditingMatch(match);
+    setShowEditDialog(true);
+  };
+
+  const handleConfirmMatch = async () => {
+    try {
+      // if (!menuRow || !editingMatch) {
+      //   showNotification('Missing required data', 'error');
+      //   return;
+      // }
+
+      // Prepare the update content
+      const updateContent = {
+        invoice_id: editingMatch['Invoice Number'],
+        passenger_name: editingMatch['Passenger Name'],
+        hotel_name: editingMatch['Hotel Name'],
+        hotel_address: editingMatch['Hotel Address'],
+        chain_name: editingMatch['Chain Name'],
+        invoice_date: editingMatch['Invoice Date'],
+        departure_or_checkin_date: editingMatch['Departure/Check-in Date'],
+        booking_date: editingMatch['Booking Date'],
+        arrival_city_name: editingMatch['Arrival City Name'],
+        arrival_country: editingMatch['Arrival Country'],
+        fare: editingMatch['Fare'],
+        currency_code: editingMatch['Currency Code'],
+        flag: true,
+        reason: 'Manually matched'
+      };
+
+      // Update the document (you'll need to get the document ID from your dataset)
+      const documentId = selectedMenuRowId || 0; // Adjust based on your data structure
+
+      if (!documentId) {
+        showNotification('Cannot update: Document ID not found', 'error');
+        return;
+      }
+
+      await domo.put(
+        `/domo/datastores/v1/collections/Invoice_Reconciliation_Output/documents/${documentId}`,
+        { content: updateContent }
+      );
+
+      showNotification('Record matched and updated successfully!', 'success');
+      setShowEditDialog(false);
+      setShowMatchesDialog(false);
+      setMenuRow(null);
+      fetchInvoiceData();
+
+    } catch (error) {
+      console.error('Error updating record:', error);
+      showNotification('Failed to update record', 'error');
+    }
+  };
+
   const handleRowClick = (row) => {
     setSelectedRow(row);
     setOpenDialog(true);
@@ -513,7 +651,6 @@ const InvoiceReconciliation = () => {
     fetchInvoiceData();
   }, [searchTerm, filterFileName, filterFlag]);
 
-  // Skeleton loader component
   const TableSkeleton = () => (
     <TableBody>
       {[...Array(5)].map((_, idx) => (
@@ -569,22 +706,18 @@ const InvoiceReconciliation = () => {
           </Box>
         )}
 
-        {/* Header */}
         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {/* <Typography variant="h4" sx={{ color: '#2b3553', mb: 0.5 }}>Take2Eton</Typography> */}
           <img src={logo} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} alt='Logo' />
-          {/* <Typography variant="body2" color="text.secondary">Invoice reconciliation dashboard</Typography> */}
         </Box>
 
-        {/* Upload Card */}
         <Card
           elevation={0}
           sx={{
             p: 1,
             mb: 3,
-            borderRadius: 3, // larger rounded corners like the image
+            borderRadius: 3,
             textAlign: "center",
-            background: "#faf6fb", // subtle background similar to the image
+            background: "#faf6fb",
             border: "2px dashed",
             borderColor: theme.palette.primary.main,
             cursor: "pointer",
@@ -602,7 +735,6 @@ const InvoiceReconciliation = () => {
           component="label"
           htmlFor="file-upload"
         >
-          {/* Hidden input (clicking the card opens file dialog) */}
           <input
             accept="application/pdf, .pdf"
             style={{ display: "none" }}
@@ -630,7 +762,6 @@ const InvoiceReconciliation = () => {
             Click to upload
           </Typography>
 
-          {/* Subtext */}
           <Typography
             variant="caption"
             color="text.secondary"
@@ -668,7 +799,7 @@ const InvoiceReconciliation = () => {
                 disabled={!selectedFile || uploading}
                 onClick={(e) => {
                   e.preventDefault();
-                  e.stopPropagation(); // prevent label click
+                  e.stopPropagation();
                   handleUpload();
                 }}
                 startIcon={!uploading && <CloudUpload />}
@@ -679,7 +810,6 @@ const InvoiceReconciliation = () => {
             </Box>
           )}
 
-          {/* Linear progress when uploading */}
           {uploading && (
             <Box mt={2} sx={{ width: "100%" }} onClick={(e) => e.stopPropagation()}>
               <LinearProgress
@@ -689,7 +819,6 @@ const InvoiceReconciliation = () => {
           )}
         </Card>
 
-        {/* Filter Card */}
         <FilterCard sx={{ mb: 2 }}>
           <CardContent>
             <Grid container spacing={2} alignItems="center">
@@ -738,7 +867,6 @@ const InvoiceReconciliation = () => {
           </CardContent>
         </FilterCard>
 
-        {/* Professional Table */}
         <TableContainer component={Paper} sx={{ mb: 3, borderRadius: 2, overflow: 'auto', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.07)' }}>
           <Table size="small" role="table">
             <TableHead>
@@ -779,9 +907,8 @@ const InvoiceReconciliation = () => {
                 ) : (
                   paginatedData.map((inv) => (
                     <StyledTableRow
-                      key={inv.invoice_number}
+                      key={inv.id}
                       isMatched={inv.flag === "True" || inv.flag === true}
-                      onClick={() => handleRowClick(inv)}
                     >
                       <TableCell sx={{ fontWeight: 600, color: '#2c2c2c', padding: '12px 8px' }}>
                         {inv.invoice_number}
@@ -804,9 +931,23 @@ const InvoiceReconciliation = () => {
                         {renderStatus(inv.flag)}
                       </TableCell>
                       <TableCell sx={{ padding: '12px 8px', textAlign: 'center' }}>
-                        <IconButton size="small" sx={{ color: 'primary.main' }}>
-                          <MoreHoriz fontSize="small" />
-                        </IconButton>
+                        {(inv.flag === "False" || inv.flag === false) ? (
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleMenuOpen(e, inv)}
+                            sx={{ color: 'primary.main' }}
+                          >
+                            <MoreHoriz fontSize="small" />
+                          </IconButton>
+                        ) : (
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRowClick(inv)}
+                            sx={{ color: 'primary.main' }}
+                          >
+                            <MoreHoriz fontSize="small" />
+                          </IconButton>
+                        )}
                       </TableCell>
                     </StyledTableRow>
                   ))
@@ -815,6 +956,29 @@ const InvoiceReconciliation = () => {
             )}
           </Table>
         </TableContainer>
+
+        {/* Action Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleMenuClose}
+          PaperProps={{
+            sx: { borderRadius: 2 }
+          }}
+        >
+          <MenuItemComponent onClick={handleViewDetails}>
+            <ListItemIcon>
+              <Visibility fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>View Details</ListItemText>
+          </MenuItemComponent>
+          <MenuItemComponent onClick={handleFindMatches}>
+            <ListItemIcon>
+              <LinkIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Find & Match</ListItemText>
+          </MenuItemComponent>
+        </Menu>
 
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
           <Pagination
@@ -847,6 +1011,162 @@ const InvoiceReconciliation = () => {
             }}
           />
         </Box>
+
+        {/* Potential Matches Dialog */}
+        <Dialog
+          open={showMatchesDialog}
+          onClose={() => setShowMatchesDialog(false)}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+            }
+          }}
+        >
+          <DialogTitle sx={{
+            background: 'linear-gradient(135deg, #994b97 0%, #7a3d79 100%)',
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            py: 2
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LinkIcon />
+              Potential Matches
+            </Box>
+            <IconButton
+              onClick={() => setShowMatchesDialog(false)}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: alpha('#ffffff', 0.2) } }}
+            >
+              <Close />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 3 }}>
+            {loadingMatches ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                <CircularProgress />
+              </Box>
+            ) : potentialMatches.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Receipt sx={{ fontSize: 48, color: '#ccc', mb: 1 }} />
+                <Typography color="text.secondary">No potential matches found</Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: alpha('#994b97', 0.1) }}>
+                      <TableCell sx={{ fontWeight: 700, color: '#994b97' }}>Invoice Number</TableCell>
+                      <TableCell sx={{ fontWeight: 700, color: '#994b97' }}>Passenger</TableCell>
+                      <TableCell sx={{ fontWeight: 700, color: '#994b97' }}>Hotel</TableCell>
+                      <TableCell sx={{ fontWeight: 700, color: '#994b97' }}>Action</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {potentialMatches.map((match, idx) => (
+                      <TableRow key={idx} hover sx={{ cursor: 'pointer' }}>
+                        <TableCell>{match['Invoice Number']}</TableCell>
+                        <TableCell>{match['Passenger Name']}</TableCell>
+                        <TableCell>{match['Hotel Name']}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            sx={{ bgcolor: 'primary.main' }}
+                            onClick={() => handleSelectMatch(match)}
+                          >
+                            Select
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit/Confirm Match Dialog */}
+        <Dialog
+          open={showEditDialog}
+          onClose={() => setShowEditDialog(false)}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+            }
+          }}
+        >
+          <DialogTitle sx={{
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            py: 2
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CheckCircle />
+              Confirm Match
+            </Box>
+            <IconButton
+              onClick={() => setShowEditDialog(false)}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: alpha('#ffffff', 0.2) } }}
+            >
+              <Close />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 3 }}>
+            {editingMatch && (
+              <DetailGrid container spacing={2}>
+                <Grid item size={{ xs: 12 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#994b97', mb: 1 }}>
+                    Selected Invoice Details:
+                  </Typography>
+                </Grid>
+                {[
+                  { label: 'Invoice Number', id: 'Invoice Number' },
+                  { label: 'Passenger Name', id: 'Passenger Name' },
+                  { label: 'Hotel Name', id: 'Hotel Name' },
+                  { label: 'Hotel Address', id: 'Hotel Address' },
+                  { label: 'Chain Name', id: 'Chain Name' },
+                  { label: 'Invoice Date', id: 'Invoice Date' },
+                  { label: 'Check-in Date', id: 'Departure/Check-in Date' },
+                  { label: 'Fare', id: 'Fare' },
+                  { label: 'Currency', id: 'Currency Code' }
+                ].map((col) => (
+                  <Grid item size={{ xs: 12, sm: 6 }} key={col.id}>
+                    <Box className="detail-item">
+                      <Typography className="detail-label">{col.label}</Typography>
+                      <Typography className="detail-value">
+                        {editingMatch[col.id] || 'N/A'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </DetailGrid>
+            )}
+          </DialogContent>
+
+          <DialogActions sx={{ p: 2, borderTop: '1px solid #e5e7eb' }}>
+            <Button onClick={() => setShowEditDialog(false)} variant="outlined">
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmMatch} variant="contained" sx={{ bgcolor: 'success.main' }}>
+              Confirm Match
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Detail Dialog */}
         <Dialog

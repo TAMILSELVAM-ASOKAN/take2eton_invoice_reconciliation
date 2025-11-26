@@ -10,7 +10,13 @@
       "dataSetId": "c84086b1-0621-49e9-9f77-f05435b7042c",
       "alias": "Invoice_Reconcilation",
       "fields": []
+    },
+    {
+      "dataSetId": "8c2e2b8d-2afb-4386-bc10-951eec6fee0a",
+      "alias": "Customer_Data",
+      "fields": []
     }
+
   ],
   "collections": [
     {
