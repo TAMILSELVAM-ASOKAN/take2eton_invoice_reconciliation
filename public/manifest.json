@@ -12,6 +12,76 @@
       "fields": []
     }
   ],
+  "collections": [
+    {
+      "name": "Invoice_Reconciliation_Output",
+      "schema": {
+        "columns": [
+          {
+            "name": "fare",
+            "type": "STRING"
+          },
+          {
+            "name": "reason",
+            "type": "STRING"
+          },
+          {
+            "name": "flag",
+            "type": "STRING"
+          },
+          {
+            "name": "arrival_city_name",
+            "type": "STRING"
+          },
+          {
+            "name": "booking_date",
+            "type": "STRING"
+          },
+          {
+            "name": "file_name",
+            "type": "STRING"
+          },
+          {
+            "name": "passenger_name",
+            "type": "STRING"
+          },
+          {
+            "name": "currency_code",
+            "type": "STRING"
+          },
+          {
+            "name": "hotel_name",
+            "type": "STRING"
+          },
+          {
+            "name": "invoice_date",
+            "type": "STRING"
+          },
+          {
+            "name": "arrival_country",
+            "type": "STRING"
+          },
+          {
+            "name": "departure_or_checkin_date",
+            "type": "STRING"
+          },
+          {
+            "name": "currentTimestamp",
+            "type": "STRING"
+          },
+          {
+            "name": "invoice_number",
+            "type": "STRING"
+          },
+          {
+            "name": "chain_name",
+            "type": "STRING"
+          }
+        ]
+      },
+      "syncEnabled": true
+    }
+  ],
   "workflowsMapping": [
     {
       "startName": "Invoice Reconciliation",
@@ -37,5 +107,5 @@
     }
   ],
   "id": "7366227e-6cde-4da6-a558-e96f522b02e6",
-  "proxyId":"3cac8a0f-25f0-422b-8437-49099075c89c"
+  "proxyId": "3cac8a0f-25f0-422b-8437-49099075c89c"
 }

@@ -212,7 +212,7 @@ const InvoiceReconciliation = () => {
   const [dataset, setDataset] = useState([]);
 
   const essentialColumns = [
-    { id: 'invoice_id', label: 'Invoice ID', width: '12%' },
+    { id: 'invoice_number', label: 'Invoice ID', width: '12%' },
     { id: 'passenger_name', label: 'Passenger', width: '15%' },
     { id: 'hotel_name', label: 'Hotel', width: '20%' },
     { id: 'invoice_date', label: 'Invoice Date', width: '12%' },
@@ -222,7 +222,7 @@ const InvoiceReconciliation = () => {
   ];
 
   const allColumns = [
-    { id: 'invoice_id', label: 'Invoice ID' },
+    { id: 'invoice_number', label: 'Invoice ID' },
     { id: 'passenger_name', label: 'Passenger Name' },
     { id: 'hotel_name', label: 'Hotel Name' },
     { id: 'chain_name', label: 'Hotel Chain' },
@@ -326,7 +326,7 @@ const InvoiceReconciliation = () => {
       return (
         (item.hotel_name?.toLowerCase().includes(searchLower)) ||
         (item.passenger_name?.toLowerCase().includes(searchLower)) ||
-        (item.invoice_id?.toLowerCase().includes(searchLower))
+        (item.invoice_number?.toLowerCase().includes(searchLower))
       );
     }
     return true;
@@ -426,41 +426,56 @@ const InvoiceReconciliation = () => {
   const fetchInvoiceData = async () => {
     try {
       setLoadingData(true);
-      let filterQuery = "";
 
-      // Build flag filter based on filterFlag state
+      let query = {};
+
+      const conditions = [];
+
       if (filterFlag === 'matched') {
-        filterQuery += "flag == True";
+        conditions.push({ 'content.flag': { $eq: "True" } });
       } else if (filterFlag === 'unmatched') {
-        filterQuery += "flag == False";
+        conditions.push({ 'content.flag': { $eq: "False" } });
       }
 
-      // Add file_name filter
       if (filterFileName !== 'all') {
-        filterQuery += filterQuery ? "," : "";
-        filterQuery += `file_name=${filterFileName}`;
+        conditions.push({ 'content.file_name': { $eq: filterFileName } });
       }
 
-      // Add search filter
       if (searchTerm) {
-        const searchFilter = `hotel_name contains '${searchTerm}'`;
-        filterQuery += filterQuery ? "," : "";
-        filterQuery += searchFilter;
+        const searchLower = searchTerm.toLowerCase();
+        conditions.push({
+          $or: [
+            { 'content.hotel_name': { $regex: searchTerm, $options: 'i' } },
+            { 'content.passenger_name': { $regex: searchTerm, $options: 'i' } },
+            { 'content.invoice_number': { $regex: searchTerm, $options: 'i' } }
+          ]
+        });
       }
 
-      const url = filterQuery
-        ? `/data/v1/Invoice_Reconcilation?filter=${filterQuery}`
-        : "/data/v1/Invoice_Reconcilation";
-
-      const response = await domo.get(url);
-
-      if (Array.isArray(response)) {
-        setDataset(response);
-        if (response.length === 0) {
-          showNotification('No records found', 'info');
+      if (conditions.length > 0) {
+        if (conditions.length === 1) {
+          query = conditions[0];
+        } else {
+          query = { $and: conditions };
         }
-      } else if (response?.data && Array.isArray(response.data)) {
-        setDataset(response.data);
+      }
+
+      console.log('Query:', JSON.stringify(query));
+
+      const response = await domo.post(
+        `/domo/datastores/v1/collections/Invoice_Reconciliation_Output/documents/query`,
+        query
+      );
+
+      const contentValues = Array.isArray(response)
+        ? response.map(item => item.content)
+        : [];
+
+      if (Array.isArray(contentValues) && contentValues.length > 0) {
+        setDataset(contentValues);
+      } else if (contentValues.length === 0) {
+        showNotification('No records found', 'info');
+        setDataset([]);
       } else {
         console.error("Unexpected response format", response);
         setDataset([]);
@@ -557,7 +572,7 @@ const InvoiceReconciliation = () => {
         {/* Header */}
         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           {/* <Typography variant="h4" sx={{ color: '#2b3553', mb: 0.5 }}>Take2Eton</Typography> */}
-          <img src={logo} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+          <img src={logo} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} alt='Logo' />
           {/* <Typography variant="body2" color="text.secondary">Invoice reconciliation dashboard</Typography> */}
         </Box>
 
@@ -727,7 +742,7 @@ const InvoiceReconciliation = () => {
         <TableContainer component={Paper} sx={{ mb: 3, borderRadius: 2, overflow: 'auto', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.07)' }}>
           <Table size="small" role="table">
             <TableHead>
-              <TableRow sx={{ background: 'linear-gradient(135deg, #994b97 0%, #7a3d79 100%)' }}>
+              <TableRow>
                 {essentialColumns.map((col) => (
                   <TableCell
                     key={col.id}
@@ -738,7 +753,8 @@ const InvoiceReconciliation = () => {
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                       width: col.width,
-                      padding: '12px 8px'
+                      padding: '12px 8px',
+                      background: 'linear-gradient(135deg, #994b97 0%, #7a3d79 100%)'
                     }}
                   >
                     {col.label}
@@ -763,12 +779,12 @@ const InvoiceReconciliation = () => {
                 ) : (
                   paginatedData.map((inv) => (
                     <StyledTableRow
-                      key={inv.invoice_id}
+                      key={inv.invoice_number}
                       isMatched={inv.flag === "True" || inv.flag === true}
                       onClick={() => handleRowClick(inv)}
                     >
                       <TableCell sx={{ fontWeight: 600, color: '#2c2c2c', padding: '12px 8px' }}>
-                        {inv.invoice_id}
+                        {inv.invoice_number}
                       </TableCell>
                       <TableCell sx={{ padding: '12px 8px', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <Tooltip title={inv.passenger_name}>
@@ -872,15 +888,17 @@ const InvoiceReconciliation = () => {
                 {allColumns.map((col) => (
                   <Grid item size={{ xs: 12, sm: 6 }} key={col.id}>
                     <Box className="detail-item">
-                      <Typography className="detail-label" sx={{fontWeight:700}}>{col.label}</Typography>
+                      <Typography className="detail-label" sx={{ fontWeight: 700 }}>{col.label}</Typography>
                       <Typography className="detail-value">
                         {col.id === 'fare' ? (
                           `${selectedRow.currency_code} ${Number(selectedRow[col.id]).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                         ) : col.id === 'currentTimestamp' ? (
                           formatedDate(selectedRow[col.id]) || 'N/A'
-                        ) : (
-                          selectedRow[col.id] || 'N/A'
-                        )}
+                        ) :
+                          col.id === 'arrival_country' ? (selectedRow[col?.id]?.toUpperCase()) :
+                            (
+                              selectedRow[col.id] || 'N/A'
+                            )}
                       </Typography>
                     </Box>
                   </Grid>
@@ -888,7 +906,7 @@ const InvoiceReconciliation = () => {
                 {selectedRow.reason && (
                   <Grid item size={{ xs: 12 }}>
                     <Box className="detail-item">
-                      <Typography className="detail-label" sx={{fontWeight:700}}>Reason</Typography>
+                      <Typography className="detail-label" sx={{ fontWeight: 700 }}>Reason</Typography>
                       <Typography className="detail-value" sx={{ color: selectedRow.flag === "True" || selectedRow.flag === true ? '#10b981' : '#ef4444' }}>
                         {selectedRow.reason}
                       </Typography>
