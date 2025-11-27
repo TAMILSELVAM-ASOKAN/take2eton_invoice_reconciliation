@@ -550,7 +550,7 @@ const InvoiceReconciliation = () => {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-    setMenuRow(null);
+    // setMenuRow(null);
   };
 
   const handleViewDetails = () => {
@@ -664,25 +664,28 @@ const InvoiceReconciliation = () => {
       //   return;
       // }
 
-      // Prepare the update content
       const updateContent = {
+        // Changed fields from editingMatch
         invoice_number: editingMatch['Invoice Number'],
         passenger_name: editingMatch['Passenger Name'],
         hotel_name: editingMatch['Hotel Name'],
         hotel_address: editingMatch['Hotel Address'],
         chain_name: editingMatch['Chain Name'],
         invoice_date: editingMatch['Invoice Date'],
-        departure_or_checkin_date: editingMatch['Departure/Check-in Date'],
+        departure_or_checkin_date: editingMatch['Departure/Check-in Date'] || editingMatch['Departure/ Checkin Date'],
         booking_date: editingMatch['Booking Date'],
         arrival_city_name: editingMatch['Arrival City Name'],
         arrival_country: editingMatch['Arrival Country'],
         fare: editingMatch['Fare'],
         currency_code: editingMatch['Currency Code'],
+        potential_invoice_ids: menuRow.potential_invoice_ids || '',
+        file_name: menuRow.file_name || '',
         flag: true,
-        reason: 'Manually matched'
+        reason: 'Manually matched',
+        currentTimestamp: new Date()
       };
 
-      const documentId = selectedMenuRowId || 0;
+      const documentId = menuRow.id || selectedMenuRowId;
 
       if (!documentId) {
         showNotification('Cannot update: Document ID not found', 'error');
@@ -698,6 +701,7 @@ const InvoiceReconciliation = () => {
       setShowEditDialog(false);
       setShowMatchesDialog(false);
       setMenuRow(null);
+      setEditingMatch(null);
       fetchInvoiceData();
 
     } catch (error) {
@@ -706,10 +710,10 @@ const InvoiceReconciliation = () => {
     }
   };
 
-  const handleRowClick = (row) => {
-    setSelectedRow(row);
-    setOpenDialog(true);
-  };
+  // const handleRowClick = (row) => {
+  //   setSelectedRow(row);
+  //   setOpenDialog(true);
+  // };
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
@@ -1057,11 +1061,20 @@ const InvoiceReconciliation = () => {
             <ListItemText>View Details</ListItemText>
           </MenuItemComponent>
           {(menuRow?.flag === "False" || menuRow?.flag === false) && (
-            <MenuItemComponent onClick={handleFindMatches}>
+            <MenuItemComponent
+              onClick={handleFindMatches}
+              disabled={loadingMatches}
+            >
               <ListItemIcon>
-                <LinkIcon fontSize="small" />
+                {loadingMatches ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <LinkIcon fontSize="small" />
+                )}
               </ListItemIcon>
-              <ListItemText>Find & Match</ListItemText>
+              <ListItemText>
+                {loadingMatches ? 'Finding Matches...' : 'Find & Match'}
+              </ListItemText>
             </MenuItemComponent>
           )}
           <MenuItemComponent onClick={handleStatusClick}>
