@@ -224,6 +224,10 @@ const InvoiceReconciliation = () => {
   const [editingMatch, setEditingMatch] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedMenuRowId, setSelectedMenuRowId] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [statusUpdate, setStatusUpdate] = useState(null);
 
   const filesetId = "a5b14408-60a2-426c-97f2-fd9e2d305976";
   const [dataset, setDataset] = useState([]);
@@ -520,7 +524,6 @@ const InvoiceReconciliation = () => {
 
       console.log('Potential matches response:', response);
 
-      // Transform rows array into objects using columns as keys
       const formattedMatches = response.rows.map(row => {
         const matchObject = {};
         response.columns.forEach((column, index) => {
@@ -556,6 +559,73 @@ const InvoiceReconciliation = () => {
     handleMenuClose();
   };
 
+  const handleDeleteClick = () => {
+    setDeleteTarget(menuRow);
+    setShowDeleteConfirm(true);
+    handleMenuClose();
+  };
+
+  const handleConfirmDelete = async () => {
+    try {
+      if (!deleteTarget || !deleteTarget.id) {
+        showNotification('Cannot delete: Document ID not found', 'error');
+        return;
+      }
+
+      await domo.delete(
+        `/domo/datastores/v1/collections/Invoice_Reconciliation_Output/documents/${deleteTarget.id}`
+      );
+
+      showNotification('Record deleted successfully!', 'success');
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      fetchInvoiceData();
+    } catch (error) {
+      console.error('Error deleting record:', error);
+      showNotification('Failed to delete record', 'error');
+    }
+  };
+
+  const handleStatusClick = () => {
+    setStatusUpdate({
+      row: menuRow,
+      currentFlag: menuRow.flag === "True" || menuRow.flag === true
+    });
+    setShowStatusDialog(true);
+    handleMenuClose();
+  };
+
+  const handleConfirmStatusUpdate = async () => {
+    try {
+      if (!statusUpdate || !statusUpdate.row || !statusUpdate.row.id) {
+        showNotification('Cannot update: Document ID not found', 'error');
+        return;
+      }
+
+      const updateContent = {
+        ...statusUpdate.row,
+        flag: !statusUpdate.currentFlag,
+        reason: statusUpdate.currentFlag ? 'Status changed to Unmatched' : 'Status changed to Matched'
+      };
+
+      await domo.put(
+        `/domo/datastores/v1/collections/Invoice_Reconciliation_Output/documents/${statusUpdate.row.id}`,
+        { content: updateContent }
+      );
+
+      showNotification(
+        `Record marked as ${!statusUpdate.currentFlag ? 'Matched' : 'Unmatched'} successfully!`,
+        'success'
+      );
+      setShowStatusDialog(false);
+      setStatusUpdate(null);
+      fetchInvoiceData();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      showNotification('Failed to update record status', 'error');
+    }
+  };
+
   const handleFindMatches = async () => {
     if (!menuRow || !menuRow.potential_invoice_ids) {
       showNotification('No potential matches available for this record', 'warning');
@@ -568,6 +638,12 @@ const InvoiceReconciliation = () => {
     let potentialIds = menuRow.potential_invoice_ids;
     if (typeof potentialIds === 'string') {
       potentialIds = potentialIds.split(',').map(id => id.trim());
+    }
+
+    if (potentialIds.length == 0) {
+      showNotification('No potential matches available for this record', 'warning');
+      handleMenuClose();
+      return;
     }
 
     const matches = await fetchPotentialMatches(potentialIds);
@@ -590,7 +666,7 @@ const InvoiceReconciliation = () => {
 
       // Prepare the update content
       const updateContent = {
-        invoice_id: editingMatch['Invoice Number'],
+        invoice_number: editingMatch['Invoice Number'],
         passenger_name: editingMatch['Passenger Name'],
         hotel_name: editingMatch['Hotel Name'],
         hotel_address: editingMatch['Hotel Address'],
@@ -606,8 +682,7 @@ const InvoiceReconciliation = () => {
         reason: 'Manually matched'
       };
 
-      // Update the document (you'll need to get the document ID from your dataset)
-      const documentId = selectedMenuRowId || 0; // Adjust based on your data structure
+      const documentId = selectedMenuRowId || 0;
 
       if (!documentId) {
         showNotification('Cannot update: Document ID not found', 'error');
@@ -930,7 +1005,7 @@ const InvoiceReconciliation = () => {
                       <TableCell sx={{ padding: '12px 8px' }}>
                         {renderStatus(inv.flag)}
                       </TableCell>
-                      <TableCell sx={{ padding: '12px 8px', textAlign: 'center' }}>
+                      {/* <TableCell sx={{ padding: '12px 8px', textAlign: 'center' }}>
                         {(inv.flag === "False" || inv.flag === false) ? (
                           <IconButton
                             size="small"
@@ -948,6 +1023,15 @@ const InvoiceReconciliation = () => {
                             <MoreHoriz fontSize="small" />
                           </IconButton>
                         )}
+                      </TableCell> */}
+                      <TableCell sx={{ padding: '12px 8px', textAlign: 'center' }}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleMenuOpen(e, inv)}
+                          sx={{ color: 'primary.main' }}
+                        >
+                          <MoreHoriz fontSize="small" />
+                        </IconButton>
                       </TableCell>
                     </StyledTableRow>
                   ))
@@ -972,11 +1056,27 @@ const InvoiceReconciliation = () => {
             </ListItemIcon>
             <ListItemText>View Details</ListItemText>
           </MenuItemComponent>
-          <MenuItemComponent onClick={handleFindMatches}>
+          {(menuRow?.flag === "False" || menuRow?.flag === false) && (
+            <MenuItemComponent onClick={handleFindMatches}>
+              <ListItemIcon>
+                <LinkIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Find & Match</ListItemText>
+            </MenuItemComponent>
+          )}
+          <MenuItemComponent onClick={handleStatusClick}>
             <ListItemIcon>
-              <LinkIcon fontSize="small" />
+              {menuRow?.flag === "True" || menuRow?.flag === true ? <Cancel fontSize="small" /> : <CheckCircle fontSize="small" />}
             </ListItemIcon>
-            <ListItemText>Find & Match</ListItemText>
+            <ListItemText>
+              {menuRow?.flag === "True" || menuRow?.flag === true ? 'Mark as Unmatched' : 'Mark as Matched'}
+            </ListItemText>
+          </MenuItemComponent>
+          <MenuItemComponent onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
+            <ListItemIcon>
+              <Cancel fontSize="small" sx={{ color: 'error.main' }} />
+            </ListItemIcon>
+            <ListItemText>Delete</ListItemText>
           </MenuItemComponent>
         </Menu>
 
@@ -1048,8 +1148,8 @@ const InvoiceReconciliation = () => {
 
           <DialogContent sx={{ pt: 3 }}>
             {loadingMatches ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                <CircularProgress />
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 2 }}>
+                <CircularProgress size={40} />
               </Box>
             ) : potentialMatches.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -1240,6 +1340,120 @@ const InvoiceReconciliation = () => {
           <DialogActions sx={{ p: 2, borderTop: '1px solid #e5e7eb' }}>
             <Button onClick={handleCloseDialog} variant="contained" sx={{ bgcolor: 'primary.main' }}>
               Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog
+          open={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+            }
+          }}
+        >
+          <DialogTitle sx={{
+            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            py: 2
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ErrorIcon />
+              Delete Record
+            </Box>
+            <IconButton
+              onClick={() => setShowDeleteConfirm(false)}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: alpha('#ffffff', 0.2) } }}
+            >
+              <Close />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 3 }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Are you sure you want to delete this record?
+            </Typography>
+            {deleteTarget && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                <strong>Invoice:</strong> {deleteTarget.invoice_number} - {deleteTarget.hotel_name}
+              </Alert>
+            )}
+            <Typography variant="body2" color="text.secondary">
+              This action cannot be undone.
+            </Typography>
+          </DialogContent>
+
+          <DialogActions sx={{ p: 2, borderTop: '1px solid #e5e7eb' }}>
+            <Button onClick={() => setShowDeleteConfirm(false)} variant="outlined">
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmDelete} variant="contained" sx={{ bgcolor: 'error.main' }}>
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Status Update Dialog */}
+        <Dialog
+          open={showStatusDialog}
+          onClose={() => setShowStatusDialog(false)}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+            }
+          }}
+        >
+          <DialogTitle sx={{
+            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            py: 2
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Edit />
+              Update Status
+            </Box>
+            <IconButton
+              onClick={() => setShowStatusDialog(false)}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: alpha('#ffffff', 0.2) } }}
+            >
+              <Close />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 3 }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Are you sure you want to mark this record as{' '}
+              <strong>{statusUpdate?.currentFlag ? 'Unmatched' : 'Matched'}</strong>?
+            </Typography>
+            {statusUpdate?.row && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <strong>Invoice:</strong> {statusUpdate.row.invoice_number}
+              </Alert>
+            )}
+          </DialogContent>
+
+          <DialogActions sx={{ p: 2, borderTop: '1px solid #e5e7eb' }}>
+            <Button onClick={() => setShowStatusDialog(false)} variant="outlined">
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmStatusUpdate} variant="contained" sx={{ bgcolor: '#3b82f6' }}>
+              Update Status
             </Button>
           </DialogActions>
         </Dialog>
