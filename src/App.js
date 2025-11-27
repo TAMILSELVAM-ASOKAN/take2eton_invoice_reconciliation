@@ -634,7 +634,7 @@ const InvoiceReconciliation = () => {
     }
 
     setSelectedMenuRowId(menuRow.id);
-    // Parse potential_invoice_ids if it's a string
+
     let potentialIds = menuRow.potential_invoice_ids;
     if (typeof potentialIds === 'string') {
       potentialIds = potentialIds.split(',').map(id => id.trim());
