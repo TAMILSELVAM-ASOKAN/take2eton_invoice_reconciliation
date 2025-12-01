@@ -232,9 +232,121 @@ const InvoiceReconciliation = () => {
   const filesetId = "a5b14408-60a2-426c-97f2-fd9e2d305976";
   const [dataset, setDataset] = useState([]);
 
+  const [customFieldsConfig, setCustomFieldsConfig] = useState({});
+  const [showCustomFieldDialog, setShowCustomFieldDialog] = useState(false);
+  const [selectedCustomerForField, setSelectedCustomerForField] = useState('');
+  const [selectedCustomField, setSelectedCustomField] = useState('');
+  const [customColumnName, setCustomColumnName] = useState('');
+  const [loadingCustomField, setLoadingCustomField] = useState(false);
+
+  // Add this constant to define available customers
+  const availableCustomers = ['all', ...new Set(dataset.map(item => item.Customer_Group_Code).filter(Boolean))];
+
+  // Add this function to fetch custom field data
+  const fetchCustomFieldData = async (invoiceIds, sqlColumn) => {
+    try {
+      setLoadingCustomField(true);
+
+      const response = await domo.post('/sql/v1/Customer_Data',
+        `SELECT "Invoice Number", "${sqlColumn}" FROM Customer_Data WHERE "Invoice Number" IN (${invoiceIds.map(id => `'${id}'`).join(',')})`,
+        { contentType: 'text/plain' }
+      );
+
+      console.log('Custom field data response:', response);
+
+      const customFieldMap = {};
+      response.rows.forEach((row) => {
+        customFieldMap[row[0]] = row[1]; // Map Invoice Number to Custom Field Value
+      });
+
+      return customFieldMap;
+    } catch (error) {
+      console.error('Error fetching custom field data:', error);
+      showNotification('Failed to fetch custom field data. Check column name and try again.', 'error');
+      return {};
+    } finally {
+      setLoadingCustomField(false);
+    }
+  };
+
+  // Add this function to apply custom field to matched records
+  const applyCustomFieldToMatched = async () => {
+    try {
+      if (!selectedCustomerForField || !customColumnName.trim()) {
+        showNotification('Please select customer and enter column name', 'warning');
+        return;
+      }
+
+      setLoadingCustomField(true);
+
+      // Get all matched records for selected customer
+      const matchedRecords = dataset.filter(item =>
+        item.Customer_Group_Code === selectedCustomerForField &&
+        (item.flag === "True" || item.flag === true)
+      );
+
+      if (matchedRecords.length === 0) {
+        showNotification('No matched records found for selected customer', 'warning');
+        setLoadingCustomField(false);
+        return;
+      }
+
+      const invoiceNumbers = matchedRecords.map(r => r.invoice_number);
+
+      // Fetch custom field data from SQL using the column name entered by user
+      const customFieldData = await fetchCustomFieldData(invoiceNumbers, customColumnName.trim());
+
+      if (Object.keys(customFieldData).length === 0) {
+        showNotification('No data found for the specified column', 'warning');
+        setLoadingCustomField(false);
+        return;
+      }
+
+      // Update each matched record with custom field
+      const updatePromises = matchedRecords.map(record => {
+        const customValue = customFieldData[record.invoice_number];
+
+        if (customValue !== undefined && customValue !== null) {
+          const updateContent = {
+            ...record,
+            [customColumnName]: customValue,
+            [`${customColumnName}_applied_date`]: new Date()
+          };
+
+          return domo.put(
+            `/domo/datastores/v1/collections/Invoice_Reconciliation_Output/documents/${record.id}`,
+            { content: updateContent }
+          );
+        }
+        return Promise.resolve();
+      });
+
+      await Promise.all(updatePromises);
+
+      const appliedCount = Object.keys(customFieldData).length;
+      showNotification(
+        `Custom field "${customColumnName}" applied to ${appliedCount} records successfully!`,
+        'success'
+      );
+
+      setShowCustomFieldDialog(false);
+      setSelectedCustomerForField('');
+      setCustomColumnName('');
+      fetchInvoiceData();
+    } catch (error) {
+      console.error('Error applying custom field:', error);
+      showNotification('Failed to apply custom field', 'error');
+    } finally {
+      setLoadingCustomField(false);
+    }
+  };
+
+  const [filterCustomer, setFilterCustomer] = useState('all');
+
   const essentialColumns = [
     { id: 'invoice_number', label: 'Invoice ID', width: '12%' },
-    { id: 'passenger_name', label: 'Passenger', width: '15%' },
+    // { id: 'passenger_name', label: 'Passenger', width: '15%' },
+    { id: 'Customer_Group_Code', label: 'Customer Group', width: '15%' },
     { id: 'hotel_name', label: 'Hotel', width: '20%' },
     { id: 'invoice_date', label: 'Invoice Date', width: '12%' },
     { id: 'fare', label: 'Amount', width: '12%' },
@@ -244,6 +356,7 @@ const InvoiceReconciliation = () => {
 
   const allColumns = [
     { id: 'invoice_number', label: 'Invoice ID' },
+    { id: 'Customer_Group_Code', label: 'Customer Group Code' },
     { id: 'passenger_name', label: 'Passenger Name' },
     { id: 'hotel_name', label: 'Hotel Name' },
     { id: 'hotel_address', label: 'Hotel Address' },
@@ -258,6 +371,8 @@ const InvoiceReconciliation = () => {
     { id: 'currentTimestamp', label: 'Processed Date' },
     { id: 'file_name', label: 'File Name' }
   ];
+
+
 
   const showNotification = (message, severity = 'success', duration = 4000) => {
     setNotification({
@@ -330,7 +445,13 @@ const InvoiceReconciliation = () => {
 
   const uniqueFileNames = ['all', ...new Set(dataset.map(item => item.file_name).filter(Boolean))];
 
+  const uniqueCustomerNames = ['all', ...new Set(dataset.map(item => item.Customer_Group_Code).filter(Boolean))];
+
   const filteredData = dataset.filter(item => {
+    if (filterCustomer !== 'all' && item.Customer_Group_Code !== filterCustomer) {
+      return false;
+    }
+
     if (filterFileName !== 'all' && item.file_name !== filterFileName) {
       return false;
     }
@@ -447,6 +568,10 @@ const InvoiceReconciliation = () => {
       let query = {};
       const conditions = [];
 
+      if (filterCustomer !== 'all') {
+        conditions.push({ 'content.Customer_Group_Code': { $eq: filterCustomer } });
+      }
+
       if (filterFlag === 'matched') {
         conditions.push({ 'content.flag': { $eq: true } });
       } else if (filterFlag === 'unmatched') {
@@ -518,7 +643,7 @@ const InvoiceReconciliation = () => {
       setLoadingMatches(true);
 
       const response = await domo.post('/sql/v1/Customer_Data',
-        `SELECT "Invoice Number", "Passenger Name", "Hotel Name", "Hotel Address", "Chain Name", "Invoice Date", "Departure/ Checkin Date", "Booking Date", "Arrival City Name", "Arrival Country", "Fare", "Currency Code" FROM Customer_Data WHERE "Invoice Number" IN (${potentialIds.map(id => `'${id}'`).join(',')})`,
+        `SELECT "Product Type","Invoice Number", "Passenger Name", "Hotel Name", "Hotel Address", "Chain Name", "Invoice Date", "Departure/ Checkin Date", "Booking Date", "Arrival City Name", "Arrival Country", "Fare", "Currency Code" FROM Customer_Data WHERE "Product Type"='HOTEL' AND "Invoice Number" IN (${potentialIds.map(id => `'${id}'`).join(',')})`,
         { contentType: 'text/plain' }
       );
 
@@ -728,7 +853,7 @@ const InvoiceReconciliation = () => {
   useEffect(() => {
     setCurrentPage(1);
     fetchInvoiceData();
-  }, [searchTerm, filterFileName, filterFlag]);
+  }, [searchTerm, filterFileName, filterFlag, filterCustomer]);
 
   const TableSkeleton = () => (
     <TableBody>
@@ -909,7 +1034,23 @@ const InvoiceReconciliation = () => {
 
               <Grid item size={{ xs: 12, md: 9 }}>
                 <Grid container spacing={1}>
-                  <Grid item size={{ xs: 12, md: 6, sm: 6 }}>
+                  <Grid item size={{ xs: 12, md: 4, sm: 6 }}>
+                    <FileSelect
+                      select
+                      fullWidth
+                      value={filterCustomer}
+                      onChange={(e) => setFilterCustomer(e.target.value)}
+                      size="small"
+                      disabled={loadingData}
+                    >
+                      <MenuItem value="all">All Customers</MenuItem>
+                      {uniqueCustomerNames.filter(c => c !== 'all').map((customer) => (
+                        <MenuItem key={customer} value={customer}>👤 {customer}</MenuItem>
+                      ))}
+                    </FileSelect>
+                  </Grid>
+
+                  <Grid item size={{ xs: 12, md: 4, sm: 6 }}>
                     <FileSelect
                       select
                       fullWidth
@@ -925,7 +1066,7 @@ const InvoiceReconciliation = () => {
                     </FileSelect>
                   </Grid>
 
-                  <Grid item size={{ xs: 12, md: 6, sm: 6 }}>
+                  <Grid item size={{ xs: 12, md: 4, sm: 6 }}>
                     <ToggleButtonGroup
                       value={filterFlag}
                       fullWidth
@@ -939,6 +1080,24 @@ const InvoiceReconciliation = () => {
                       <ToggleButton value="matched">Matched</ToggleButton>
                       <ToggleButton value="unmatched">Unmatched</ToggleButton>
                     </ToggleButtonGroup>
+
+                  </Grid>
+                  <Grid item size={{ xs: 12, md: 12 }}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      sx={{
+                        bgcolor: 'white',
+                        color: 'primary.main',
+                        fontWeight: 700,
+                        '&:hover': {
+                          bgcolor: alpha('#fffff', 0.9)
+                        }
+                      }}
+                      onClick={() => setShowCustomFieldDialog(true)}
+                    >
+                      📋 Custom Fields
+                    </Button>
                   </Grid>
                 </Grid>
               </Grid>
@@ -993,8 +1152,8 @@ const InvoiceReconciliation = () => {
                         {inv.invoice_number}
                       </TableCell>
                       <TableCell sx={{ padding: '12px 8px', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <Tooltip title={inv.passenger_name}>
-                          <span>{inv.passenger_name}</span>
+                        <Tooltip title={inv['Customer_Group_Code']}>
+                          <span>{inv['Customer_Group_Code']}</span>
                         </Tooltip>
                       </TableCell>
                       <TableCell sx={{ padding: '12px 8px', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1060,23 +1219,21 @@ const InvoiceReconciliation = () => {
             </ListItemIcon>
             <ListItemText>View Details</ListItemText>
           </MenuItemComponent>
-          {(menuRow?.flag === "False" || menuRow?.flag === false) && (
-            <MenuItemComponent
-              onClick={handleFindMatches}
-              disabled={loadingMatches}
-            >
-              <ListItemIcon>
-                {loadingMatches ? (
-                  <CircularProgress size={20} />
-                ) : (
-                  <LinkIcon fontSize="small" />
-                )}
-              </ListItemIcon>
-              <ListItemText>
-                {loadingMatches ? 'Finding Matches...' : 'Find & Match'}
-              </ListItemText>
-            </MenuItemComponent>
-          )}
+          <MenuItemComponent
+            onClick={handleFindMatches}
+            disabled={loadingMatches}
+          >
+            <ListItemIcon>
+              {loadingMatches ? (
+                <CircularProgress size={20} />
+              ) : (
+                <LinkIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {loadingMatches ? 'Finding Matches...' : 'Find & Match'}
+            </ListItemText>
+          </MenuItemComponent>
           <MenuItemComponent onClick={handleStatusClick}>
             <ListItemIcon>
               {menuRow?.flag === "True" || menuRow?.flag === true ? <Cancel fontSize="small" /> : <CheckCircle fontSize="small" />}
@@ -1318,29 +1475,40 @@ const InvoiceReconciliation = () => {
           <DialogContent sx={{ pt: 3 }}>
             {selectedRow && (
               <DetailGrid container spacing={2}>
-                {allColumns.map((col) => (
-                  <Grid item size={{ xs: 12, sm: 6 }} key={col.id}>
-                    <Box className="detail-item">
-                      <Typography className="detail-label" sx={{ fontWeight: 700 }}>{col.label}</Typography>
-                      <Typography className="detail-value">
-                        {col.id === 'fare' ? (
-                          `${selectedRow.currency_code} ${Number(selectedRow[col.id]).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                        ) : col.id === 'currentTimestamp' ? (
-                          formatedDate(selectedRow[col.id]) || 'N/A'
-                        ) :
-                          col.id === 'arrival_country' ? (selectedRow[col?.id]?.toUpperCase()) :
-                            (
-                              selectedRow[col.id] || 'N/A'
-                            )}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                ))}
+                {/* Render all fields except 'reason' */}
+                {Object.entries(selectedRow)
+                  .filter(([key]) => !['reason', 'id', 'flag', 'potential_invoice_ids'].includes(key))
+                  .map(([key, value]) => (
+                    <Grid item size={{ xs: 12, sm: 6 }} key={key}>
+                      <Box className="detail-item">
+                        <Typography className="detail-label" sx={{ fontWeight: 700 }}>
+                          {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').toUpperCase()}
+                        </Typography>
+                        <Typography className="detail-value">
+                          {key === 'fare' ? (
+                            `${selectedRow.currency_code} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                          ) : key === 'currentTimestamp' ? (
+                            formatedDate(value) || 'N/A'
+                          ) : key === 'arrival_country' ? (
+                            String(value).toUpperCase()
+                          ) : value === null || value === undefined ? (
+                            'N/A'
+                          ) : (
+                            String(value)
+                          )}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  ))}
+
+                {/* Render 'reason' separately as full width */}
                 {selectedRow.reason && (
-                  <Grid item size={{ xs: 12 }}>
+                  <Grid item xs={12}>
                     <Box className="detail-item">
-                      <Typography className="detail-label" sx={{ fontWeight: 700 }}>Reason</Typography>
-                      <Typography className="detail-value" sx={{ color: selectedRow.flag === "True" || selectedRow.flag === true ? '#10b981' : '#ef4444' }}>
+                      <Typography className="detail-label" sx={{ fontWeight: 700 }}>
+                        REASON
+                      </Typography>
+                      <Typography className="detail-value">
                         {selectedRow.reason}
                       </Typography>
                     </Box>
@@ -1467,6 +1635,132 @@ const InvoiceReconciliation = () => {
             </Button>
             <Button onClick={handleConfirmStatusUpdate} variant="contained" sx={{ bgcolor: '#3b82f6' }}>
               Update Status
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={showCustomFieldDialog}
+          onClose={() => setShowCustomFieldDialog(false)}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+            }
+          }}
+        >
+          <DialogTitle sx={{
+            background: 'linear-gradient(135deg, #994b97 0%, #7a3d79 100%)',
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            py: 2
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Edit />
+              Apply Custom Fields
+            </Box>
+            <IconButton
+              onClick={() => {
+                setShowCustomFieldDialog(false);
+                setSelectedCustomerForField('');
+                setCustomColumnName('');
+              }}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: alpha('#ffffff', 0.2) } }}
+            >
+              <Close />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                Select a customer and specify the column name to fetch and apply to all their matched records.
+              </Typography>
+
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#994b97', mb: 1 }}>
+                  Step 1: Select Customer
+                </Typography>
+                <FileSelect
+                  select
+                  fullWidth
+                  label="Select Customer"
+                  value={selectedCustomerForField}
+                  onChange={(e) => setSelectedCustomerForField(e.target.value)}
+                  disabled={loadingCustomField}
+                  size="small"
+                >
+                  <MenuItem value="">-- Choose Customer --</MenuItem>
+                  {availableCustomers.filter(c => c !== 'all').map((customer) => (
+                    <MenuItem key={customer} value={customer}>
+                      👤 {customer}
+                    </MenuItem>
+                  ))}
+                </FileSelect>
+              </Box>
+
+              {selectedCustomerForField && (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#994b97', mb: 1 }}>
+                    Step 2: Enter Column Name
+                  </Typography>
+                  <SearchField
+                    fullWidth
+                    label="Column Name (e.g., Ref, ProjectCode, CustomField)"
+                    value={customColumnName}
+                    onChange={(e) => setCustomColumnName(e.target.value)}
+                    disabled={loadingCustomField}
+                    placeholder="Enter the exact column name from Customer_Data table"
+                    size="small"
+                    helperText="This is case-sensitive and must match the column name in Customer_Data"
+                  />
+                </Box>
+              )}
+
+              {selectedCustomerForField && customColumnName && (
+                <Alert severity="info" icon={<Visibility fontSize="small" />}>
+                  This will apply the column <strong>"{customColumnName}"</strong> to all <strong>matched records</strong> for <strong>{selectedCustomerForField}</strong>.
+                </Alert>
+              )}
+
+              {selectedCustomerForField && customColumnName && (
+                <Alert severity="warning" icon={<ErrorIcon fontSize="small" />}>
+                  Make sure the column name is spelled correctly. Incorrect column names will cause errors.
+                </Alert>
+              )}
+            </Box>
+          </DialogContent>
+
+          <DialogActions sx={{ p: 2, borderTop: '1px solid #e5e7eb' }}>
+            <Button
+              onClick={() => {
+                setShowCustomFieldDialog(false);
+                setSelectedCustomerForField('');
+                setCustomColumnName('');
+              }}
+              variant="outlined"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={applyCustomFieldToMatched}
+              variant="contained"
+              sx={{ bgcolor: 'primary.main' }}
+              disabled={!selectedCustomerForField || !customColumnName.trim() || loadingCustomField}
+            >
+              {loadingCustomField ? (
+                <>
+                  <CircularProgress size={16} sx={{ mr: 1 }} />
+                  Processing...
+                </>
+              ) : (
+                'Apply Field'
+              )}
             </Button>
           </DialogActions>
         </Dialog>
