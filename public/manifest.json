@@ -18,7 +18,7 @@
     },
     {
       "dataSetId": "Invoice_Reconciliation_Log",
-      "alias": "Customer_Data",
+      "alias": "Invoice_Reconciliation_Log",
       "fields": []
     }
   ],
