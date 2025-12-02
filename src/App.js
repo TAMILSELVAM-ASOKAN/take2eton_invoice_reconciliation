@@ -643,7 +643,7 @@ const InvoiceReconciliation = () => {
       setLoadingMatches(true);
 
       const response = await domo.post('/sql/v1/Customer_Data',
-        `SELECT "Product Type","Invoice Number", "Passenger Name", "Hotel Name", "Hotel Address", "Chain Name", "Invoice Date", "Departure/ Checkin Date", "Booking Date", "Arrival City Name", "Arrival Country", "Fare", "Currency Code" FROM Customer_Data WHERE "Product Type"='HOTEL' AND "Invoice Number" IN (${potentialIds.map(id => `'${id}'`).join(',')})`,
+        `SELECT "Customer Group Code","Product Type","Invoice Number","Passenger Name", "Hotel Name", "Hotel Address", "Chain Name", "Invoice Date", "Departure/ Checkin Date", "Booking Date", "Arrival City Name", "Arrival Country", "Fare", "Currency Code" FROM Customer_Data WHERE "Product Type"='HOTEL' AND "Invoice Number" IN (${potentialIds.map(id => `'${id}'`).join(',')})`,
         { contentType: 'text/plain' }
       );
 
@@ -791,6 +791,7 @@ const InvoiceReconciliation = () => {
 
       const updateContent = {
         // Changed fields from editingMatch
+        Customer_Group_Code : editingMatch['Customer Group Code'],
         invoice_number: editingMatch['Invoice Number'],
         passenger_name: editingMatch['Passenger Name'],
         hotel_name: editingMatch['Hotel Name'],
@@ -1105,8 +1106,8 @@ const InvoiceReconciliation = () => {
           </CardContent>
         </FilterCard>
 
-        <TableContainer component={Paper} sx={{ mb: 3, borderRadius: 2, overflow: 'auto', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.07)' }}>
-          <Table size="small" role="table">
+        <TableContainer component={Paper} sx={{ mb: 3, borderRadius: 2, height: 400, overflow: 'auto', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.07)' }}>
+          <Table size="small" role="table" stickyHeader aria-label="sticky table" sx={{ minWidth: 650 }}>
             <TableHead>
               <TableRow>
                 {essentialColumns.map((col) => (
@@ -1406,6 +1407,7 @@ const InvoiceReconciliation = () => {
                 </Grid>
                 {[
                   { label: 'Invoice Number', id: 'Invoice Number' },
+                  { label: 'Customer Group', id: 'Customer Group Code' },
                   { label: 'Passenger Name', id: 'Passenger Name' },
                   { label: 'Hotel Name', id: 'Hotel Name' },
                   { label: 'Hotel Address', id: 'Hotel Address' },
