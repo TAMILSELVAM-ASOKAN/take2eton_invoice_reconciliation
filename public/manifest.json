@@ -15,8 +15,12 @@
       "dataSetId": "8c2e2b8d-2afb-4386-bc10-951eec6fee0a",
       "alias": "Customer_Data",
       "fields": []
+    },
+    {
+      "dataSetId": "Invoice_Reconciliation_Log",
+      "alias": "Customer_Data",
+      "fields": []
     }
-
   ],
   "collections": [
     {

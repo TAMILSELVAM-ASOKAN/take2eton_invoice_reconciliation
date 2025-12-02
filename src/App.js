@@ -1475,9 +1475,44 @@ const InvoiceReconciliation = () => {
           <DialogContent sx={{ pt: 3 }}>
             {selectedRow && (
               <DetailGrid container spacing={2}>
-                {/* Render all fields except 'reason' */}
+                {/* Render fields in the order specified in allColumns */}
+                {allColumns
+                  .filter(column =>
+                    selectedRow.hasOwnProperty(column.id) &&
+                    !['reason', 'id', 'flag', 'potential_invoice_ids'].includes(column.id)
+                  )
+                  .map(column => {
+                    const value = selectedRow[column.id];
+                    return (
+                      <Grid item size={{ xs: 12, sm: 6 }} key={column.id}>
+                        <Box className="detail-item">
+                          <Typography className="detail-label" sx={{ fontWeight: 700 }}>
+                            {column.label.toUpperCase()}
+                          </Typography>
+                          <Typography className="detail-value">
+                            {column.id === 'fare' ? (
+                              `${selectedRow.currency_code} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                            ) : column.id === 'currentTimestamp' ? (
+                              formatedDate(value) || 'N/A'
+                            ) : column.id === 'arrival_country' ? (
+                              String(value).toUpperCase()
+                            ) : value === null || value === undefined ? (
+                              'N/A'
+                            ) : (
+                              String(value)
+                            )}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    );
+                  })}
+
+                {/* Render remaining fields not in allColumns */}
                 {Object.entries(selectedRow)
-                  .filter(([key]) => !['reason', 'id', 'flag', 'potential_invoice_ids'].includes(key))
+                  .filter(([key]) =>
+                    !['reason', 'id', 'flag', 'potential_invoice_ids'].includes(key) &&
+                    !allColumns.some(column => column.id === key)
+                  )
                   .map(([key, value]) => (
                     <Grid item size={{ xs: 12, sm: 6 }} key={key}>
                       <Box className="detail-item">
